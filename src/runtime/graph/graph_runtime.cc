@@ -376,14 +376,8 @@ void GraphRuntime::SetupOpExecs() {
         }
       }
     } else if (inode.op_type == "_tensorrt_subgraph_op") {
-#ifdef TVM_GRAPH_RUNTIME_TENSORRT
-      CHECK_EQ(inode.subgraphs.size(), 1U) << "Only supports one subgraph per node";
-      CHECK_EQ(inode.subgraphs[0].arg_nodes.size(), inode.inputs.size());
-      op_execs_[nid] = tensorrt_exec_manager_.CreateExec(
-          inode.name, inode.subgraphs[0], args);
-#else
-      LOG(FATAL) << "TensorRT NOT enabled for operator " << inode.op_type;
-#endif  // TVM_GRAPH_RUNTIME_TENSORRT
+        LOG(FATAL) << "_tensorrt_subgraph_op is deprecated" << std::endl
+                   << "TensorRT NOT enabled for operator " << inode.op_type;
     } else {
       LOG(FATAL) << "Unknown op type " << inode.op_type << " in graph runtime";
     }
