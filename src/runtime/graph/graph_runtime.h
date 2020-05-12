@@ -461,9 +461,6 @@ class TVM_DLL GraphRuntime : public ModuleNode {
   std::vector<size_t> data_alignment_;
   /*! \brief Operator on each node. */
   std::vector<std::function<void()> > op_execs_;
-#ifdef TVM_GRAPH_RUNTIME_TENSORRT
-  contrib::TensorRTExecManager tensorrt_exec_manager_;
-#endif  // TVM_GRAPH_RUNTIME_TENSORRT
 
   /*! \brief Arg info of TVM ops */
   std::vector<std::shared_ptr<OpArgs> > op_args_;
