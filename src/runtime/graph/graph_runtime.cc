@@ -112,15 +112,26 @@ int GraphRuntime::NumInputs() const {
   return input_nodes_.size();
 }
 /*!
- * \brief Get the number of the index-th input.
+ * \brief Get the name of the index-th input.
  * \param index The input index.
  *
  * \return The name of the index-th input.
  */
 std::string GraphRuntime::GetInputName(int index) const {
   CHECK_LT(static_cast<size_t>(index), input_nodes_.size())
-      << "The index of ouf of range.";
+      << "The index is out of range.";
   return nodes_[input_nodes_[index]].name;
+}
+/*!
+ * \brief Get the type of the index-th input.
+ * \param index The input index.
+ *
+ * \return The type of the index-th input.
+ */
+std::string GraphRuntime::GetInputType(int index) const {
+  CHECK_LT(static_cast<size_t>(index), input_nodes_.size())
+      << "The index is out of range.";
+  return attrs_.dltype[input_nodes_[index]];
 }
 /*!
  * \brief Get the names of weight inputs.
@@ -162,6 +173,17 @@ void GraphRuntime::SetInputZeroCopy(int index, DLTensor* data_ref) {
  */
 int GraphRuntime::NumOutputs() const {
   return outputs_.size();
+}
+/*!
+ * \brief Get the type of the index-th output.
+ * \param index The output index.
+ *
+ * \return The type of the index-th output.
+ */
+std::string GraphRuntime::GetOutputType(int index) const {
+  CHECK_LT(static_cast<size_t>(index), outputs_.size())
+      << "The index is out of range.";
+  return attrs_.dltype[outputs_[index].node_id];
 }
 /*!
  * \brief Return NDArray for given input index.
