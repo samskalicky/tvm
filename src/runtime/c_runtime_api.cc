@@ -105,6 +105,9 @@ class DeviceAPIManager {
   DeviceAPIManager() {
     std::fill(api_.begin(), api_.end(), nullptr);
   }
+  ~DeviceAPIManager() {
+    std::fill(api_.begin(), api_.end(), nullptr);
+  }
   // Global static variable.
   static DeviceAPIManager* Global() {
     static DeviceAPIManager inst;
