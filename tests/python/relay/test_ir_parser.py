@@ -219,7 +219,7 @@ def test_vars():
 
     # operator id
     op = parse_text("foo")
-    assert isinstance(op, relay.Op)
+    assert isinstance(op, tvm.ir.Op)
     assert op.name == "foo"
 
 
@@ -853,8 +853,8 @@ def test_duplicate_adt_cons_defn():
 def test_duplicate_global_var():
     parse_text(
         """
-        def @id[A](%x: A) -> A { x }
-        def @id[A](%x: A) -> A { x }
+        def @id[A](%%x: A) -> A { x }
+        def @id[A](%%x: A) -> A { x }
         """
     )
 

@@ -18,12 +18,14 @@
 """
 Relay TensorRT codegen.
 """
+import os
+import numpy as np
 import tvm
+import tvm.ir
 import tvm.relay.transform as transform
 from tvm import relay
 from tvm.relay.expr import Call, Constant, Tuple, GlobalVar
 from tvm.relay.build_module import bind_params_by_name
-from tvm.relay import op as reg
 from tvm.relay.transform import _ffi_api
 from tvm.relay.expr_functor import ExprMutator
 
@@ -114,7 +116,7 @@ def IsTrtRuntimeAvailable():
     return GetTrtVersion() != ()
 
 def _register_external_op_helper(op_name, supported=True):
-    @reg.register(op_name, "target.tensorrt")
+    @tvm.ir.register_op_attr(op_name, "target.tensorrt")
     def _func_wrapper(attrs, args):
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -123,7 +125,7 @@ def _register_external_op_helper(op_name, supported=True):
     return _func_wrapper
 
 def _register_external_op_helper_func(op_name, func, trt_version):
-    @reg.register(op_name, "target.tensorrt")
+    @tvm.ir.register_op_attr(op_name, "target.tensorrt")
     def _func_wrapper(attrs, args):
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -131,11 +133,14 @@ def _register_external_op_helper_func(op_name, func, trt_version):
         return func(attrs, args, op_name, trt_version)
     return _func_wrapper
 
-def register_tensorrt_annotations(trt_version):
+def register_tensorrt_annotations(trt_version, use_implicit_batch=True):
     if hasattr(register_tensorrt_annotations, "registered"):
         # Can't register annotations more than once.
         return
     register_tensorrt_annotations.registered = True
+    if not use_implicit_batch and trt_version < (6, 0, 1):
+        print("Explicit batch mode only available for TRT 6+")
+        use_implicit_batch = True
     # Ops which are always supported
     _register_external_op_helper("nn.relu")
     _register_external_op_helper("sigmoid")
@@ -157,7 +162,7 @@ def register_tensorrt_annotations(trt_version):
     #_register_external_op_helper("split")
     #_register_external_op_helper("slice_like")
 
-    @reg.register("add", "target.tensorrt")
+    @tvm.ir.register_op_attr("add", "target.tensorrt")
     def add_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -170,7 +175,7 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("nn.batch_norm", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.batch_norm", "target.tensorrt")
     def batch_norm_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -180,17 +185,17 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("nn.softmax", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.softmax", "target.tensorrt")
     def softmax_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
             return False
-        if trt_version < (6, 0, 1) and int(attrs.axis) == 0:
+        if use_implicit_batch and int(attrs.axis) == 0:
             print("nn.softmax: can't modify batch dimension.")
             return False
         return True
 
-    @reg.register("nn.conv2d", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.conv2d", "target.tensorrt")
     def conv2d_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -206,7 +211,7 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("nn.dense", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.dense", "target.tensorrt")
     def dense_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -221,7 +226,7 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("nn.bias_add", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.bias_add", "target.tensorrt")
     def bias_add_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         # TODO(trevmorr): BiasAddSimplifier creates a pattern which cannot be
         # converted to TRT without binding params and constant folding.
@@ -236,7 +241,7 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("nn.max_pool2d", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.max_pool2d", "target.tensorrt")
     def max_pool_2d_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -246,7 +251,7 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("nn.avg_pool2d", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.avg_pool2d", "target.tensorrt")
     def avg_pool_2d_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -263,7 +268,7 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("nn.global_max_pool2d", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.global_max_pool2d", "target.tensorrt")
     def global_max_pool_2d_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -273,7 +278,7 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("nn.global_avg_pool2d", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.global_avg_pool2d", "target.tensorrt")
     def global_avg_pool_2d_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -283,17 +288,17 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("expand_dims", "target.tensorrt")
+    @tvm.ir.register_op_attr("expand_dims", "target.tensorrt")
     def expand_dims_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
             return False
-        if trt_version < (6, 0, 1) and int(attrs.axis) == 0:
+        if use_implicit_batch and int(attrs.axis) == 0:
             print("expand_dims: can't modify batch dimension.")
             return False
         return True
 
-    @reg.register("squeeze", "target.tensorrt")
+    @tvm.ir.register_op_attr("squeeze", "target.tensorrt")
     def squeeze_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -301,17 +306,17 @@ def register_tensorrt_annotations(trt_version):
         if not attrs.axis:
             print("squeeze: must explicitly set axis.")
             return False
-        if trt_version < (6, 0, 1) and any([axis == 0 for axis in map(int, attrs.axis)]):
+        if use_implicit_batch and any([axis == 0 for axis in map(int, attrs.axis)]):
             print("squeeze: can't modify batch dimension.")
             return False
         return True
 
-    @reg.register("concatenate", "target.tensorrt")
+    @tvm.ir.register_op_attr("concatenate", "target.tensorrt")
     def concatenate_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.dtype != "float32" for x in args[0].checked_type.fields]):
             print("Only float32 inputs are supported for TensorRT.")
             return False
-        if trt_version >= (6, 0, 1):
+        if not use_implicit_batch:
             return True
         if int(attrs.axis) == 0:
             print("concatenate: can't modify batch dimension.")
@@ -323,7 +328,7 @@ def register_tensorrt_annotations(trt_version):
                     return False
         return True
 
-    @reg.register("nn.conv2d_transpose", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.conv2d_transpose", "target.tensorrt")
     def conv2d_transpose_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -345,17 +350,17 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("transpose", "target.tensorrt")
+    @tvm.ir.register_op_attr("transpose", "target.tensorrt")
     def transpose_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
             return False
-        if trt_version < (6, 0, 1) and int(attrs.axes[0]) != 0:
+        if use_implicit_batch and int(attrs.axes[0]) != 0:
             print("transpose: can't modify batch dimension.")
             return False
         return True
 
-    @reg.register("reshape", "target.tensorrt")
+    @tvm.ir.register_op_attr("reshape", "target.tensorrt")
     def reshape_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -363,9 +368,29 @@ def register_tensorrt_annotations(trt_version):
         if any([x < -1 for x in map(int, attrs.newshape)]):
             print("reshape: new shape dims must be explicit.")
             return False
+        if use_implicit_batch:
+            shape = list(map(int, args[0].checked_type.shape))
+            new_shape = list(map(int, attrs.newshape))
+            if len(new_shape) == 0 or len(shape) == 0:
+                print("reshape: Can't reshape to or from scalar.")
+                return False
+            # TRT cannot modify batch dimension.
+            original_volume = np.prod(shape)
+            # First, resolve 0.
+            for i, value in enumerate(new_shape):
+                if value == 0:
+                    new_shape[i] = shape[i]
+            # Resolve -1.
+            for i, value in enumerate(new_shape):
+                if value == -1:
+                    new_shape[i] = original_volume // np.prod([x for x in new_shape if x != -1])
+            # Remove batch dimension and see if volumes match
+            if shape[0] != new_shape[0]:
+                print("reshape: can't modify batch dimension.")
+                return False
         return True
 
-    @reg.register("nn.pad", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.pad", "target.tensorrt")
     def pad_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -385,7 +410,7 @@ def register_tensorrt_annotations(trt_version):
         if attrs.exclude:
             print("{}: exclude not supported.".format(op_name))
             return False
-        if trt_version < (6, 0, 1) and any([x == 0 for x in map(int, attrs.axis)]):
+        if use_implicit_batch and any([x == 0 for x in map(int, attrs.axis)]):
             print("{}: can't modify batch dimension.".format(op_name))
             return False
         return True
@@ -408,7 +433,7 @@ def register_tensorrt_annotations(trt_version):
     _register_external_op_helper_func("atan", trt_5_1_5_whitelist_fn, trt_version)
     _register_external_op_helper_func("ceil", trt_5_1_5_whitelist_fn, trt_version)
 
-    @reg.register("strided_slice", "target.tensorrt")
+    @tvm.ir.register_op_attr("strided_slice", "target.tensorrt")
     def strided_slice_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -419,7 +444,7 @@ def register_tensorrt_annotations(trt_version):
         if args[0].checked_type.dtype != "float32":
             print("strided_slice: only fp32 inputs are supported.")
             return False
-        if trt_version < (6, 0, 1):
+        if use_implicit_batch:
             batch_dim_begin_modified = attrs.begin[0] is not None and int(attrs.begin[0]) != 0
             batch_dim_end_modified = attrs.end[0] is not None and int(attrs.end[0]) != -1 and \
                                      int(attrs.end[0]) != int(args[0].checked_type.shape[0])
@@ -431,7 +456,7 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("image.resize", "target.tensorrt")
+    @tvm.ir.register_op_attr("image.resize", "target.tensorrt")
     def resize_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -444,7 +469,7 @@ def register_tensorrt_annotations(trt_version):
         # TODO(trevmorr): coordinate transform method
         return True
 
-    @reg.register("nn.adaptive_max_pool2d", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.adaptive_max_pool2d", "target.tensorrt")
     def adapative_max_pool2d_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -454,7 +479,7 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("nn.adaptive_avg_pool2d", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.adaptive_avg_pool2d", "target.tensorrt")
     def adapative_avg_pool2d_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -464,7 +489,7 @@ def register_tensorrt_annotations(trt_version):
             return False
         return True
 
-    @reg.register("nn.upsampling", "target.tensorrt")
+    @tvm.ir.register_op_attr("nn.upsampling", "target.tensorrt")
     def upsampling_whitelist_fn(attrs, args): # pylint: disable=unused-variable
         if any([x.checked_type.dtype != "float32" for x in args]):
             print("Only float32 inputs are supported for TensorRT.")
@@ -519,28 +544,94 @@ class SubgraphRemover(ExprMutator):
                 return subgraph_gv(*args)
         return super().visit_call(call)
 
-def PruneSubgraphs(mod, compiler="tensorrt"):
+def PruneSubgraphs(mod, compiler="tensorrt", use_implicit_batch=True, prune_no_macs=False):
     """
-    Removes subgraphs which were originally partitioned for TRT if the number of
-    multiply-accumulates is 0. This is a heuristic which can improve performance by around 5%
-    because TVM provides better optimization for certain ops.
+    If use_implicit_batch is True, removes subgraphs which were originally partitioned for TRT
+    that are incompatible with implicit batch mode.
+    If prune_no_macs is True, also remove subgraph if the number of multiply-accumulates is 0.
+    This is a heuristic which can improve performance by around 5% because TVM provides better
+    optimization for certain ops.
+
+     Parameters
+    ----------
+    mod: Module
+        The module which has been partitioned for tensorrt compiler.
+
+    compiler : str
+        Compiler string, should be "tensorrt".
+
+    use_implicit_batch : bool
+        Which mode we plan to use for TensorRT. Will be used to determine which subgraphs are
+        valid. In implicit batch mode, all inputs to a subgraph must have the same batch size.
+
+    prune_no_macs : bool
+        Whether to also remove subgraphs which have no multiple-accumulate operations.
+
+    Returns
+    -------
+    mod: Module
+        The modified module which has pruned subgraphs reverted back to TVM.
     """
-    subgraph_with_macs = []
+    subgraphs_to_remove = []
+
+    def is_valid_subgraph(func):
+        """Whether a subgraph is valid in TRT.
+
+        Returns
+        -------
+        compatible : bool
+            True if the subgraph is compatible with TRT.
+        """
+        if not use_implicit_batch:
+            return True
+        input_batch_sizes = []
+        for var in func.params:
+            # In implicit batch mode, all inputs must have same batch size
+            if isinstance(var.checked_type, relay.TupleType):
+                for tupe_type in var.checked_type.fields:
+                    # Scalar inputs not allowed
+                    if len(tupe_type.shape) == 0:
+                        return False
+                    input_batch_sizes.append(int(tupe_type.shape[0]))
+            else:
+                # Scalar inputs not allowed
+                if len(var.checked_type.shape) == 0:
+                    return False
+                input_batch_sizes.append(int(var.checked_type.shape[0]))
+        if len(input_batch_sizes) > 1 and \
+           any([x != input_batch_sizes[0] for x in input_batch_sizes[1:]]):
+            return False
+        return True
+
+    # Remove invalid subgraphs
     for subgraph in mod.get_global_vars():
         name = subgraph.name_hint
         if not mod[name].attrs or mod[name].attrs["Compiler"] != compiler:
             continue
-        num_macs = relay.analysis.get_total_mac_number(mod[name])
-        subgraph_with_macs.append([name, num_macs])
-    print("Subgraphs with computed # of MACS:", subgraph_with_macs)
-    subgraphs_to_remove = [name for name, num_macs in subgraph_with_macs if num_macs == 0]
+        if not is_valid_subgraph(mod[name]):
+            subgraphs_to_remove.append(name)
+
+    # Remove subgraphs with no multiply-accumulates
+    if prune_no_macs:
+        subgraph_with_macs = []
+        for subgraph in mod.get_global_vars():
+            name = subgraph.name_hint
+            if not mod[name].attrs or mod[name].attrs["Compiler"] != compiler:
+                continue
+            num_macs = relay.analysis.get_total_mac_number(mod[name])
+            subgraph_with_macs.append([name, num_macs])
+        print("Subgraphs with computed # of MACS:", subgraph_with_macs)
+        subgraphs_to_remove.extend([name for name, num_macs in subgraph_with_macs if num_macs == 0])
+    if len(subgraphs_to_remove) == 0:
+        return mod
     print("Will remove these subgraphs:", subgraphs_to_remove)
     # Create new pruned module
     new_mod = tvm.IRModule()
     new_mod["main"] = SubgraphRemover(subgraphs_to_remove, mod, new_mod).visit(mod["main"])
     return new_mod
 
-def EnableTrt(mod, params=None, trt_version=None, prune_subgraphs=False):
+def EnableTrt(mod, params=None, trt_version=None, use_implicit_batch=True,
+              max_workspace_size=1 << 30, prune_subgraphs=False):
     """Converts the "main" function in the module into one that can be executed using
     TensorRT. If any of the operators are not supported by the TensorRT
     conversion, the unmodified program will be returned instead.
@@ -558,6 +649,14 @@ def EnableTrt(mod, params=None, trt_version=None, prune_subgraphs=False):
         Which version of TensorRT to target for partitioning as a tuple of
         (major, minor, patch). If not specified, will attempt to get using
         GetTrtVersion.
+
+    use_implicit_batch : bool
+        If false, will use explicit batch mode. Explicit batch mode is
+        available in TRT 6+. It increases operator coverage but comes at a
+        performance penalty.
+
+    max_workspace_size : int
+        Number of bytes for TensorRT workspace size.
 
     prune_subgraphs : bool
         If true, will prune subgraphs with 0 MACS and run them with TVM instead.
@@ -577,7 +676,7 @@ def EnableTrt(mod, params=None, trt_version=None, prune_subgraphs=False):
     assert isinstance(trt_version, (list, tuple))
     assert len(trt_version) == 3
 
-    register_tensorrt_annotations(trt_version)
+    register_tensorrt_annotations(trt_version, use_implicit_batch=use_implicit_batch)
 
     if params:
         # Bind params so that we can use FoldConstant.
@@ -588,7 +687,7 @@ def EnableTrt(mod, params=None, trt_version=None, prune_subgraphs=False):
                                     SimplifySliceLikePass(),
                                     RemoveDropoutPass(),
                                     transform.RemoveUnusedFunctions(),
-                                    transform.ConvertLayout('NCHW'),
+                                    transform.ConvertLayout({'nn.conv2d': ['NCHW', 'default']}),
                                     transform.FoldConstant(),
                                     LegalizeLayoutTranformPass(),
                                     transform.AnnotateTarget('tensorrt'),
@@ -597,6 +696,8 @@ def EnableTrt(mod, params=None, trt_version=None, prune_subgraphs=False):
                                     transform.InferType()])
     with tvm.transform.PassContext(opt_level=3):
         mod = seq(mod)
-    if prune_subgraphs:
-        mod = PruneSubgraphs(mod)
+    mod = PruneSubgraphs(mod, use_implicit_batch=use_implicit_batch, prune_no_macs=prune_subgraphs)
+    # Set environment variables used to communicate with TensorRT module.
+    os.environ["TVM_TENSORRT_MAX_WORKSPACE_SIZE"] = str(max_workspace_size)
+    os.environ["TVM_TENSORRT_USE_IMPLICIT_BATCH"] = str(int(use_implicit_batch))
     return mod

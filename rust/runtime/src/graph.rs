@@ -24,6 +24,7 @@ use nom::{
     character::complete::{alpha1, digit1},
     number::complete::{le_i32, le_i64, le_u16, le_u32, le_u64, le_u8},
 };
+
 use serde;
 use serde_json;
 use tvm_common::{
@@ -382,7 +383,18 @@ named! {
 // Converts a bytes to String.
 named! {
     name<String>,
-    map_res!(length_data!(le_u64), |b: &[u8]| String::from_utf8(b.to_vec()))
+    do_parse!(
+        len_l: le_u32 >>
+        len_h: le_u32 >>
+        data: take!(len_l) >>
+        (
+            if len_h == 0 {
+                String::from_utf8(data.to_vec()).unwrap()
+            } else {
+                panic!("Too long string")
+            }
+        )
+    )
 }
 
 // Parses a TVMContext

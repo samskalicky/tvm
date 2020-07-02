@@ -91,15 +91,14 @@ def test_add_pipeline():
         tvm.testing.assert_allclose(
             c.asnumpy(), a.asnumpy() + b.asnumpy())
 
-    with tvm.target.build_config(offset_factor=4):
-        check_c()
+    check_c()
 
 
 def test_reinterpret():
     nn = 1024
     n = tvm.runtime.convert(nn)
     A = te.placeholder((n,), name='A', dtype="int32")
-    B = te.compute(A.shape, lambda *i: tvm.tir.call_pure_intrin("float32", "reinterpret", A(*i)), name='B')
+    B = te.compute(A.shape, lambda *i: tvm.tir.call_intrin("float32", "tir.reinterpret", A(*i)), name='B')
     s = te.create_schedule(B.op)
 
     def check_c():
