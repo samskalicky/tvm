@@ -457,9 +457,9 @@ class TVM_DLL GraphRuntime : public ModuleNode {
   /*! \brief Data alignment of each node. */
   std::vector<size_t> data_alignment_;
   /*! \brief Operator on each node. */
-  std::vector<std::function<void()> > op_execs_;
+  std::vector<std::function<void()>> op_execs_;
   /*! \brief Arg info of TVM ops */
-  std::vector<std::shared_ptr<OpArgs> > op_args_;
+  std::vector<std::shared_ptr<OpArgs>> op_args_;
 };
 
 std::vector<TVMContext> GetAllContext(const TVMArgs& args);
