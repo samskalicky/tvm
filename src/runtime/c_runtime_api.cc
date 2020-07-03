@@ -102,12 +102,8 @@ class DeviceAPIManager {
   DeviceAPI* rpc_api_{nullptr};
   std::mutex mutex_;
   // constructor
-  DeviceAPIManager() {
-    std::fill(api_.begin(), api_.end(), nullptr);
-  }
-  ~DeviceAPIManager() {
-    std::fill(api_.begin(), api_.end(), nullptr);
-  }
+  DeviceAPIManager() { std::fill(api_.begin(), api_.end(), nullptr); }
+  ~DeviceAPIManager() { std::fill(api_.begin(), api_.end(), nullptr); }
   // Global static variable.
   static DeviceAPIManager* Global() {
     static DeviceAPIManager inst;
